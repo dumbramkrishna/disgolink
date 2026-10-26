@@ -123,9 +123,6 @@ func (n *Node) open(ctx context.Context) error {
 	}
 
 	sessionID := n.Config.SessionID
-	if sessionID == "" {
-		sessionID = n.Config.SessionID
-	}
 	if sessionID != "" {
 		header.Add("Session-Id", sessionID)
 	}
@@ -183,27 +180,9 @@ func (n *Node) Close() {
 }
 
 func (n *Node) doReconnect(ctx context.Context) error {
-	var (
-		try              int
-		backoffIncrement int
-	)
+	var try int
 
 	for {
-		// Exponentially backoff up to a limit of 10s
-		delay := time.Duration(1<<backoffIncrement) * time.Second
-		if delay > maximumConnectDelay {
-			delay = maximumConnectDelay
-		} else {
-			backoffIncrement++
-		}
-
-		timer := time.NewTimer(delay)
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-timer.C:
-		}
-
 		err := n.open(ctx)
 		if err == nil {
 			// Successfully connected, our job here is done
@@ -214,13 +193,35 @@ func (n *Node) doReconnect(ctx context.Context) error {
 			return err
 		}
 
+		delay := reconnectDelay(try)
 		n.logger.ErrorContext(ctx, "failed to reconnect node", slog.Any("err", err), slog.Int("try", try), slog.Duration("delay", delay))
 		n.statusMu.Lock()
 		n.status = StatusDisconnected
 		n.statusMu.Unlock()
 
 		try++
+
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
 	}
+}
+
+// reconnectDelay returns the exponential backoff delay for the given attempt,
+// capped at maximumConnectDelay.
+func reconnectDelay(attempt int) time.Duration {
+	delay := time.Second
+	for i := 0; i < attempt; i++ {
+		delay *= 2
+		if delay >= maximumConnectDelay {
+			return maximumConnectDelay
+		}
+	}
+	return delay
 }
 
 func (n *Node) reconnect() {
