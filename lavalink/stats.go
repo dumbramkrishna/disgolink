@@ -1,7 +1,5 @@
 package lavalink
 
-import "math"
-
 type Stats struct {
 	Players        int         `json:"players"`
 	PlayingPlayers int         `json:"playingPlayers"`
@@ -12,14 +10,13 @@ type Stats struct {
 }
 
 func (s Stats) Better(stats Stats) bool {
-	return s.load() < stats.load()
-}
-
-func (s Stats) load() float64 {
 	if s.CPU.Cores <= 0 {
-		return math.Inf(1)
+		return false
 	}
-	return s.CPU.SystemLoad / float64(s.CPU.Cores) * 100
+	if stats.CPU.Cores <= 0 {
+		return true
+	}
+	return s.CPU.SystemLoad/float64(s.CPU.Cores) < stats.CPU.SystemLoad/float64(stats.CPU.Cores)
 }
 
 type Memory struct {
